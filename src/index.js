@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import alfaRoutes from "./routes/alfa.routes.js";
-
+import 'dotenv/config';
 dotenv.config();
 
 const app = express();
