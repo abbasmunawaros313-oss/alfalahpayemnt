@@ -1,5 +1,5 @@
 import express from "express";
-import { encryptAES, decryptAES } from "../utlis/aes.js";
+import { encryptAES, decryptAES } from "../utils/aes.js";
 
 const router = express.Router();
 
