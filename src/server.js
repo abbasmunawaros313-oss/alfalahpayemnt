@@ -2,14 +2,20 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-// CRITICAL: Load environment variables FIRST
 dotenv.config();
 
-// Now dynamically import routes after environment variables are loaded
-const { default: alfa } = await import("./routes/alfa.js");
+// Standard import (safer than top-level await for now)
+import alfa from "./routes/alfa.js"; 
 
 const app = express();
-app.use(cors());
+
+// 1. Explicit CORS Configuration
+app.use(cors({
+  origin: ["https://www.ostravel.pk", "https://ostravel.pk", "http://localhost:5173"], // Add your frontend URLs here
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true // Allow cookies/headers if needed
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
