@@ -1,6 +1,5 @@
 import express from "express";
-import { encryptAES, decryptAES } from "../utils/aes.js";
-
+import { encryptAES, decryptAES } from "../utlis/aes.js";
 
 const router = express.Router();
 
@@ -107,23 +106,24 @@ router.post("/pay", async (req, res) => {
     const formattedAmount = numAmount.toFixed(2);
     const description = "Order Payment";
 
-    // 2. BUILD FORM FIELDS FIRST (needed for encryption)
-    const paymentFields = {
+    // 2. BUILD FORM FIELDS (matching Bank Alfalah's exact order)
+    // Note: HS_RequestHash will be added AFTER encryption
+    const fieldsToEncrypt = {
+      HS_RequestHash: "",  // Empty initially, will be filled after encryption
+      HS_IsRedirectionRequest: isRedirectionRequest || "1",
       HS_ChannelId: config.channelId,
+      HS_ReturnURL: config.returnUrl,
       HS_MerchantId: config.merchantId,
       HS_StoreId: config.storeId,
       HS_MerchantHash: config.merchantHash,
       HS_MerchantUsername: config.merchantUsername,
       HS_MerchantPassword: config.merchantPassword,
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
-      HS_ReturnURL: config.returnUrl,
-      HS_ChannelId: config.channelId,
       HS_TransactionReferenceNumber: transactionId,
     };
 
     // 3. ENCRYPTION (Handshake Protocol: Key=Value& format)
-    // Build string as: HS_ChannelId=1001&HS_MerchantId=223804&...
-    const transactionData = Object.entries(paymentFields)
+    // Build string as: HS_RequestHash=&HS_IsRedirectionRequest=1&HS_ChannelId=1001&...
+    const transactionData = Object.entries(fieldsToEncrypt)
       .map(([key, value]) => `${key}=${value}`)
       .join("&");
 
@@ -146,12 +146,23 @@ router.post("/pay", async (req, res) => {
       });
     }
 
-    // 4. ADD ENCRYPTED HASH AND ADDITIONAL FIELDS
-    paymentFields.HS_RequestHash = encryptedRequest;
-    paymentFields.HS_TransactionAmount = formattedAmount;
-    paymentFields.HS_TransactionDescription = description;
-    paymentFields.HS_ListenerURL = config.listenerUrl;
-    paymentFields.HS_TransactionTypeId = transactionType || "3";
+    // 4. BUILD FINAL PAYMENT FIELDS (for form submission)
+    const paymentFields = {
+      HS_RequestHash: encryptedRequest,
+      HS_IsRedirectionRequest: isRedirectionRequest || "1",
+      HS_ChannelId: config.channelId,
+      HS_ReturnURL: config.returnUrl,
+      HS_MerchantId: config.merchantId,
+      HS_StoreId: config.storeId,
+      HS_MerchantHash: config.merchantHash,
+      HS_MerchantUsername: config.merchantUsername,
+      HS_MerchantPassword: config.merchantPassword,
+      HS_TransactionReferenceNumber: transactionId,
+      HS_TransactionAmount: formattedAmount,
+      HS_TransactionDescription: description,
+      HS_ListenerURL: config.listenerUrl,
+      HS_TransactionTypeId: transactionType || "3",
+    };
 
     console.log("✅ Payment initiated successfully for:", transactionId);
 
