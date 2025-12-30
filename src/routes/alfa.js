@@ -106,63 +106,121 @@ router.post("/pay", async (req, res) => {
     const formattedAmount = numAmount.toFixed(2);
     const description = "Order Payment";
 
-    // 2. BUILD FORM FIELDS (matching Bank Alfalah's exact order)
-    // Note: HS_RequestHash will be added AFTER encryption
-    const fieldsToEncrypt = {
-      HS_RequestHash: "",  // Empty initially, will be filled after encryption
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
+    // ===== STEP 1: HANDSHAKE (Get AuthToken) =====
+    console.log("🤝 Step 1: Starting Handshake...");
+
+    const handshakeFields = {
+      HS_RequestHash: "",  // Will be filled after encryption
       HS_ChannelId: config.channelId,
-      HS_ReturnURL: config.returnUrl,
       HS_MerchantId: config.merchantId,
       HS_StoreId: config.storeId,
+      HS_ReturnURL: config.returnUrl,
       HS_MerchantHash: config.merchantHash,
       HS_MerchantUsername: config.merchantUsername,
       HS_MerchantPassword: config.merchantPassword,
       HS_TransactionReferenceNumber: transactionId,
+      HS_IsRedirectionRequest: "0",  // 0 = Get JSON response with AuthToken
     };
 
-    // 3. ENCRYPTION (Handshake Protocol: Key=Value& format)
-    // Build string as: HS_RequestHash=&HS_IsRedirectionRequest=1&HS_ChannelId=1001&...
-    const transactionData = Object.entries(fieldsToEncrypt)
+    // Encrypt handshake data
+    const handshakeData = Object.entries(handshakeFields)
       .map(([key, value]) => `${key}=${value}`)
       .join("&");
 
-    console.log("📦 Transaction Data to Encrypt (Handshake Format):", transactionData);
+    console.log("📦 Handshake Data to Encrypt:", handshakeData.substring(0, 100) + "...");
 
-    let encryptedRequest;
+    let handshakeHash;
     try {
-      encryptedRequest = encryptAES(
-        transactionData,
-        config.key1,
-        config.key2
-      );
-      console.log("🔐 Encrypted Request Hash:", encryptedRequest.substring(0, 50) + "...");
+      handshakeHash = encryptAES(handshakeData, config.key1, config.key2);
+      handshakeFields.HS_RequestHash = handshakeHash;
     } catch (encryptError) {
-      console.error("❌ Encryption failed:", encryptError.message);
+      console.error("❌ Handshake encryption failed:", encryptError.message);
       return res.status(500).json({
         success: false,
-        message: "Encryption failed. Please check your encryption keys.",
+        message: "Encryption failed",
         error: encryptError.message,
       });
     }
 
-    // 4. BUILD FINAL PAYMENT FIELDS (for form submission)
-    const paymentFields = {
-      HS_RequestHash: encryptedRequest,
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
-      HS_ChannelId: config.channelId,
-      HS_ReturnURL: config.returnUrl,
-      HS_MerchantId: config.merchantId,
-      HS_StoreId: config.storeId,
-      HS_MerchantHash: config.merchantHash,
-      HS_MerchantUsername: config.merchantUsername,
-      HS_MerchantPassword: config.merchantPassword,
-      HS_TransactionReferenceNumber: transactionId,
-      HS_TransactionAmount: formattedAmount,
-      HS_TransactionDescription: description,
-      HS_ListenerURL: config.listenerUrl,
-      HS_TransactionTypeId: transactionType || "3",
+    // Make handshake request to get AuthToken
+    let authToken;
+    try {
+      const formData = new URLSearchParams();
+      Object.entries(handshakeFields).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+
+      const handshakeUrl = config.paymentUrl; // /HS/HS/HS
+      console.log("📡 Calling handshake:", handshakeUrl);
+
+      const handshakeResponse = await fetch(handshakeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
+      });
+
+      const handshakeResult = await handshakeResponse.json();
+      console.log("� Handshake Response:", handshakeResult);
+
+      if (!handshakeResult.AuthToken) {
+        throw new Error(handshakeResult.ErrorMessage || "Handshake failed: No AuthToken received");
+      }
+
+      authToken = handshakeResult.AuthToken;
+      console.log("✅ AuthToken received:", authToken.substring(0, 30) + "...");
+
+    } catch (handshakeError) {
+      console.error("❌ Handshake request failed:", handshakeError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Handshake failed",
+        error: handshakeError.message,
+      });
+    }
+
+    // ===== STEP 2: BUILD SSO FORM (With AuthToken) =====
+    console.log("💳 Step 2: Building SSO form...");
+
+    const ssoFields = {
+      RequestHash: "",  // Will be filled after encryption
+      AuthToken: authToken,
+      ChannelId: config.channelId,
+      Currency: config.currency,
+      IsBIN: "0",
+      ReturnURL: config.returnUrl,
+      MerchantId: config.merchantId,
+      StoreId: config.storeId,
+      MerchantHash: config.merchantHash,
+      MerchantUsername: config.merchantUsername,
+      MerchantPassword: config.merchantPassword,
+      TransactionTypeId: transactionType || "3",
+      TransactionReferenceNumber: transactionId,
+      TransactionAmount: formattedAmount,
     };
+
+    // Encrypt SSO data
+    const ssoData = Object.entries(ssoFields)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&");
+
+    console.log("📦 SSO Data to Encrypt:", ssoData.substring(0, 100) + "...");
+
+    let ssoHash;
+    try {
+      ssoHash = encryptAES(ssoData, config.key1, config.key2);
+      ssoFields.RequestHash = ssoHash;
+      console.log("🔐 SSO Hash generated");
+    } catch (encryptError) {
+      console.error("❌ SSO encryption failed:", encryptError.message);
+      return res.status(500).json({
+        success: false,
+        message: "SSO encryption failed",
+        error: encryptError.message,
+      });
+    }
+
+    // SSO URL is different from handshake URL
+    const ssoUrl = config.paymentUrl.replace("/HS/HS/HS", "/SSO/SSO/SSO");
 
     console.log("✅ Payment initiated successfully for:", transactionId);
 
@@ -182,8 +240,8 @@ router.post("/pay", async (req, res) => {
     res.json({
       success: true,
       data: {
-        paymentUrl: config.paymentUrl,
-        paymentFields: paymentFields,
+        paymentUrl: ssoUrl,  // SSO URL, not HS URL
+        paymentFields: ssoFields,  // SSO fields with AuthToken
       },
       message: "Payment initiated successfully",
     });
