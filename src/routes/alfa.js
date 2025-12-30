@@ -342,14 +342,19 @@ router.post("/listener", async (req, res) => {
 function processReturnData(data) {
   console.log("🔍 Processing return data:", data);
 
-  // Handle both GET and POST parameters
+  // Bank Alfalah returns: O (OrderID), RC (ResponseCode), TS (TransactionStatus), RD (ResponseDescription)
   const params = {
     success: data.success || data.Success,
     authToken: data.AuthToken || data.authToken || data.auth_token,
-    transactionId: data.transaction_id || data.TransactionId || data.HS_TransactionReferenceNumber,
-    errorMessage: data.ErrorMessage || data.errorMessage || data.error_message,
-    responseCode: data.ResponseCode || data.response_code,
-    responseMessage: data.ResponseMessage || data.response_message,
+    // O = Order ID (Bank Alfalah's actual parameter)
+    transactionId: data.O || data.transaction_id || data.TransactionId || data.HS_TransactionReferenceNumber,
+    errorMessage: data.ErrorMessage || data.errorMessage || data.error_message || data.RD,
+    // RC = Response Code (Bank Alfalah's actual parameter)
+    responseCode: data.RC || data.ResponseCode || data.response_code,
+    // RD = Response Description
+    responseMessage: data.RD || data.ResponseMessage || data.response_message,
+    // TS = Transaction Status (P = Paid, F = Failed)
+    transactionStatus: data.TS,
     requestHash: data.RequestHash || data.request_hash,
   };
 
@@ -360,6 +365,9 @@ function processReturnData(data) {
   if (params.success === 'true' || params.success === true) {
     isSuccess = true;
   } else if (params.responseCode === '00' || params.responseCode === '000') {
+    isSuccess = true;
+  } else if (params.transactionStatus === 'P') {
+    // TS=P means Paid (success)
     isSuccess = true;
   }
 
