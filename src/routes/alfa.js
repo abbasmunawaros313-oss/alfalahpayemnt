@@ -1,5 +1,5 @@
 import express from "express";
-import { encryptAES, decryptAES } from "../utlis/aes.js";
+import { encryptAES, decryptAES } from "../utils/aes.js";
 
 const router = express.Router();
 
@@ -106,28 +106,19 @@ router.post("/pay", async (req, res) => {
     const formattedAmount = numAmount.toFixed(2);
     const description = "Order Payment";
 
-    // 2. BUILD FORM FIELDS (matching Bank Alfalah's exact order)
-    // Note: HS_RequestHash will be added AFTER encryption
-    const fieldsToEncrypt = {
-      HS_RequestHash: "",  // Empty initially, will be filled after encryption
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
-      HS_ChannelId: config.channelId,
-      HS_ReturnURL: config.returnUrl,
-      HS_MerchantId: config.merchantId,
-      HS_StoreId: config.storeId,
-      HS_MerchantHash: config.merchantHash,
-      HS_MerchantUsername: config.merchantUsername,
-      HS_MerchantPassword: config.merchantPassword,
-      HS_TransactionReferenceNumber: transactionId,
-    };
+    // 2. ENCRYPTION (8-Parameters)
+    const transactionData = [
+      config.channelId,
+      config.currency,
+      formattedAmount,
+      transactionId,
+      description,
+      customerEmail || "",
+      customerMobile || "",
+      config.returnUrl,
+    ].join("|");
 
-    // 3. ENCRYPTION (Handshake Protocol: Key=Value& format)
-    // Build string as: HS_RequestHash=&HS_IsRedirectionRequest=1&HS_ChannelId=1001&...
-    const transactionData = Object.entries(fieldsToEncrypt)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("&");
-
-    console.log("📦 Transaction Data to Encrypt (Handshake Format):", transactionData);
+    console.log("📦 Transaction Data to Encrypt:", transactionData);
 
     let encryptedRequest;
     try {
@@ -146,12 +137,9 @@ router.post("/pay", async (req, res) => {
       });
     }
 
-    // 4. BUILD FINAL PAYMENT FIELDS (for form submission)
+    // 3. FORM DATA
     const paymentFields = {
-      HS_RequestHash: encryptedRequest,
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
       HS_ChannelId: config.channelId,
-      HS_ReturnURL: config.returnUrl,
       HS_MerchantId: config.merchantId,
       HS_StoreId: config.storeId,
       HS_MerchantHash: config.merchantHash,
@@ -160,6 +148,9 @@ router.post("/pay", async (req, res) => {
       HS_TransactionReferenceNumber: transactionId,
       HS_TransactionAmount: formattedAmount,
       HS_TransactionDescription: description,
+      HS_RequestHash: encryptedRequest,
+      HS_IsRedirectionRequest: isRedirectionRequest || "1",
+      HS_ReturnURL: config.returnUrl,
       HS_ListenerURL: config.listenerUrl,
       HS_TransactionTypeId: transactionType || "3",
     };
