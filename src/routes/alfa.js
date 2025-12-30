@@ -1,6 +1,7 @@
 import express from "express";
 import { encryptAES, decryptAES } from "../utils/aes.js";
 
+
 const router = express.Router();
 
 // Bank Alfalah configuration
@@ -106,19 +107,27 @@ router.post("/pay", async (req, res) => {
     const formattedAmount = numAmount.toFixed(2);
     const description = "Order Payment";
 
-    // 2. ENCRYPTION (8-Parameters)
-    const transactionData = [
-      config.channelId,
-      config.currency,
-      formattedAmount,
-      transactionId,
-      description,
-      customerEmail || "",
-      customerMobile || "",
-      config.returnUrl,
-    ].join("|");
+    // 2. BUILD FORM FIELDS FIRST (needed for encryption)
+    const paymentFields = {
+      HS_ChannelId: config.channelId,
+      HS_MerchantId: config.merchantId,
+      HS_StoreId: config.storeId,
+      HS_MerchantHash: config.merchantHash,
+      HS_MerchantUsername: config.merchantUsername,
+      HS_MerchantPassword: config.merchantPassword,
+      HS_IsRedirectionRequest: isRedirectionRequest || "1",
+      HS_ReturnURL: config.returnUrl,
+      HS_ChannelId: config.channelId,
+      HS_TransactionReferenceNumber: transactionId,
+    };
 
-    console.log("📦 Transaction Data to Encrypt:", transactionData);
+    // 3. ENCRYPTION (Handshake Protocol: Key=Value& format)
+    // Build string as: HS_ChannelId=1001&HS_MerchantId=223804&...
+    const transactionData = Object.entries(paymentFields)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&");
+
+    console.log("📦 Transaction Data to Encrypt (Handshake Format):", transactionData);
 
     let encryptedRequest;
     try {
@@ -137,23 +146,12 @@ router.post("/pay", async (req, res) => {
       });
     }
 
-    // 3. FORM DATA
-    const paymentFields = {
-      HS_ChannelId: config.channelId,
-      HS_MerchantId: config.merchantId,
-      HS_StoreId: config.storeId,
-      HS_MerchantHash: config.merchantHash,
-      HS_MerchantUsername: config.merchantUsername,
-      HS_MerchantPassword: config.merchantPassword,
-      HS_TransactionReferenceNumber: transactionId,
-      HS_TransactionAmount: formattedAmount,
-      HS_TransactionDescription: description,
-      HS_RequestHash: encryptedRequest,
-      HS_IsRedirectionRequest: isRedirectionRequest || "1",
-      HS_ReturnURL: config.returnUrl,
-      HS_ListenerURL: config.listenerUrl,
-      HS_TransactionTypeId: transactionType || "3",
-    };
+    // 4. ADD ENCRYPTED HASH AND ADDITIONAL FIELDS
+    paymentFields.HS_RequestHash = encryptedRequest;
+    paymentFields.HS_TransactionAmount = formattedAmount;
+    paymentFields.HS_TransactionDescription = description;
+    paymentFields.HS_ListenerURL = config.listenerUrl;
+    paymentFields.HS_TransactionTypeId = transactionType || "3";
 
     console.log("✅ Payment initiated successfully for:", transactionId);
 
